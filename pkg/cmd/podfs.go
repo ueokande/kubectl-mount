@@ -114,7 +114,6 @@ type LinuxStat_t struct {
 }
 
 func (f *PodFS) Stat(name string) (fs.FileInfo, error) {
-	// TODO handle a symlink file
 	output, err := f.Executor.Run(context.TODO(), []string{
 		"stat",
 		"--format",
@@ -212,6 +211,14 @@ func (f *PodFS) Sub(dir string) (fs.FS, error) {
 	}, nil
 }
 
+func (f *PodFS) Readlink(name string) (string, error) {
+	output, err := f.Executor.Run(context.TODO(), []string{
+		"readlink",
+		path.Join(f.Pwd, name),
+	})
+	return string(output[:len(output)-1]), err
+}
+
 type PodFile struct {
 	name    string
 	fs      fs.StatFS
@@ -243,3 +250,14 @@ func (i *PodFileInfo) Mode() fs.FileMode  { return i.mode }
 func (i *PodFileInfo) ModTime() time.Time { return time.Unix(i.sys.Mtim.Sec, i.sys.Mtim.Nsec) }
 func (i *PodFileInfo) IsDir() bool        { return i.mode.IsDir() }
 func (i *PodFileInfo) Sys() interface{}   { return &i.sys }
+
+type ReadlinkFS interface {
+	Readlink(name string) (string, error)
+}
+
+func Readlink(fsys fs.FS, name string) (string, error) {
+	if fsys, ok := fsys.(ReadlinkFS); ok {
+		return fsys.Readlink(name)
+	}
+	panic("fsys does not implement a ReadlinkFS")
+}

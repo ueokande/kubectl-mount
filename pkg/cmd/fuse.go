@@ -23,6 +23,7 @@ var _ = (fusefs.NodeGetattrer)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeOpener)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeReader)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeReleaser)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeReadlinker)((*PodFuseNode)(nil))
 
 func (n *PodFuseNode) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errno) {
 	es, err := fs.ReadDir(n.fsys, ".")
@@ -34,6 +35,9 @@ func (n *PodFuseNode) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Er
 		mode := uint32(e.Type().Perm())
 		if e.IsDir() {
 			mode |= fuse.S_IFDIR
+		}
+		if e.Type()&fs.ModeSymlink == fs.ModeSymlink {
+			mode |= fuse.S_IFLNK
 		}
 		entries[i] = fuse.DirEntry{
 			Mode: mode,
@@ -123,6 +127,11 @@ func (f *PodFuseNode) Read(ctx context.Context, h fusefs.FileHandle, dest []byte
 		return nil, fusefs.ToErrno(err)
 	}
 	return fuse.ReadResultData(dest), fusefs.OK
+}
+
+func (f *PodFuseNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
+	link, err := Readlink(f.fsys, f.file)
+	return []byte(link), fusefs.ToErrno(err)
 }
 
 func (f *PodFuseNode) Release(ctx context.Context, h fusefs.FileHandle) syscall.Errno {
