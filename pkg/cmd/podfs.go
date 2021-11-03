@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -69,6 +70,58 @@ func (f *PodFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if !inf.IsDir() {
 		return nil, &fs.PathError{Op: "readdirent", Path: p, Err: syscall.ENOTDIR}
 	}
+
+	_, err = f.Executor.Run(context.TODO(), []string{
+		"ls", "/bin/busybox",
+	})
+	if err == nil {
+		return f.readDirSlow(name)
+	}
+	return f.readDir(name)
+}
+
+func (f *PodFS) readDir(name string) ([]fs.DirEntry, error) {
+	p := path.Join(f.Pwd, name)
+	output, err := f.Executor.Run(context.TODO(), []string{
+		"find", p, "-maxdepth", "1", "-mindepth", "1", "-printf", "%y:%f\n",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []fs.DirEntry
+	var mode fs.FileMode
+	s := bufio.NewScanner(bytes.NewReader(output))
+	for s.Scan() {
+		line := s.Text()
+		sp := strings.Split(line, ":")
+		modec, subname := sp[0], sp[1]
+		switch modec {
+		case "b":
+			mode |= fs.ModeDevice
+		case "c":
+			mode |= fs.ModeDevice | fs.ModeCharDevice
+		case "d":
+			mode |= fs.ModeDir
+		case "p":
+			mode |= fs.ModeNamedPipe
+		case "l":
+			mode |= fs.ModeSymlink
+		case "s":
+			mode |= fs.ModeSocket
+		}
+		e := &PodDirEntry{name: subname, mode: mode}
+		entries = append(entries, e)
+	}
+	if s.Err() != nil {
+		return nil, s.Err()
+	}
+	return entries, nil
+
+}
+
+func (f *PodFS) readDirSlow(name string) ([]fs.DirEntry, error) {
+	p := path.Join(f.Pwd, name)
 	output, err := f.Executor.Run(context.TODO(), []string{
 		"ls",
 		"-A",
@@ -88,10 +141,7 @@ func (f *PodFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	for i, file := range files {
 		inf, err := fs.Stat(subdir, file)
 		if err != nil {
-			if isNotExist(err) {
-				return nil, os.ErrNotExist
-			}
-			return nil, err
+			return nil, toOSError(err)
 		}
 		entries[i] = &PodDirEntry{
 			name: file,
@@ -120,15 +170,12 @@ type LinuxStat_t struct {
 func (f *PodFS) Stat(name string) (fs.FileInfo, error) {
 	output, err := f.Executor.Run(context.TODO(), []string{
 		"stat",
-		"--format",
+		"-c",
 		strings.Join([]string{"%n", "%i", "%s", "%B", "%b", "%f", "%X", "%Y", "%Z", "%u", "%g"}, "\t"),
 		path.Join(f.Pwd, name),
 	})
 	if err != nil {
-		if isNotExist(err) {
-			return nil, os.ErrNotExist
-		}
-		return nil, err
+		return nil, toOSError(err)
 	}
 	output = output[:len(output)-1] // trim a trailing new-line
 	parts := bytes.Split(output, []byte{'\t'})
@@ -224,10 +271,7 @@ func (f *PodFS) Readlink(name string) (string, error) {
 		path.Join(f.Pwd, name),
 	})
 	if err != nil {
-		if isNotExist(err) {
-			return "", os.ErrNotExist
-		}
-		return "", err
+		return "", toOSError(err)
 	}
 	return string(output[:len(output)-1]), nil
 }
@@ -275,10 +319,12 @@ func Readlink(fsys fs.FS, name string) (string, error) {
 	panic("fsys does not implement a ReadlinkFS")
 }
 
-func isNotExist(err error) bool {
+func toOSError(err error) error {
 	var cmderr *RemoteCommandErr
 	if errors.As(err, &cmderr) {
-		return strings.Contains(string(cmderr.Stderr), "No such file or directory")
+		if strings.Contains(string(cmderr.Stderr), "No such file or directory") {
+			return os.ErrNotExist
+		}
 	}
-	return false
+	return err
 }
