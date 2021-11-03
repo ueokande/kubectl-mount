@@ -3,9 +3,11 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -86,7 +88,9 @@ func (f *PodFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	for i, file := range files {
 		inf, err := fs.Stat(subdir, file)
 		if err != nil {
-			// TODO handle file not found
+			if isNotExist(err) {
+				return nil, os.ErrNotExist
+			}
 			return nil, err
 		}
 		entries[i] = &PodDirEntry{
@@ -121,6 +125,9 @@ func (f *PodFS) Stat(name string) (fs.FileInfo, error) {
 		path.Join(f.Pwd, name),
 	})
 	if err != nil {
+		if isNotExist(err) {
+			return nil, os.ErrNotExist
+		}
 		return nil, err
 	}
 	output = output[:len(output)-1] // trim a trailing new-line
@@ -216,7 +223,13 @@ func (f *PodFS) Readlink(name string) (string, error) {
 		"readlink",
 		path.Join(f.Pwd, name),
 	})
-	return string(output[:len(output)-1]), err
+	if err != nil {
+		if isNotExist(err) {
+			return "", os.ErrNotExist
+		}
+		return "", err
+	}
+	return string(output[:len(output)-1]), nil
 }
 
 type PodFile struct {
@@ -260,4 +273,12 @@ func Readlink(fsys fs.FS, name string) (string, error) {
 		return fsys.Readlink(name)
 	}
 	panic("fsys does not implement a ReadlinkFS")
+}
+
+func isNotExist(err error) bool {
+	var cmderr *RemoteCommandErr
+	if errors.As(err, &cmderr) {
+		return strings.Contains(string(cmderr.Stderr), "No such file or directory")
+	}
+	return false
 }
