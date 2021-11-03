@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"io/fs"
+	"os"
 	"syscall"
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
@@ -20,10 +21,16 @@ type PodFuseNode struct {
 var _ = (fusefs.NodeReaddirer)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeLookuper)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeGetattrer)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeSetattrer)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeOpener)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeReader)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeReleaser)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeReadlinker)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeMknoder)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeMkdirer)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeLinker)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeUnlinker)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeSymlinker)((*PodFuseNode)(nil))
 
 func (n *PodFuseNode) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errno) {
 	es, err := fs.ReadDir(n.fsys, ".")
@@ -103,7 +110,15 @@ func (n *PodFuseNode) Getattr(ctx context.Context, f fusefs.FileHandle, out *fus
 	return fusefs.OK
 }
 
+func (n *PodFuseNode) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	return syscall.EPERM
+}
+
 func (f *PodFuseNode) Open(ctx context.Context, flags uint32) (fh fusefs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	if int(flags)&os.O_WRONLY == os.O_WRONLY || int(flags)&os.O_RDWR == os.O_RDWR {
+		return nil, 0, syscall.EPERM
+	}
+
 	src, err := f.fsys.Open(f.file)
 	if err != nil {
 		return nil, 0, fusefs.ToErrno(err)
@@ -141,4 +156,22 @@ func (f *PodFuseNode) Release(ctx context.Context, h fusefs.FileHandle) syscall.
 		return fusefs.ToErrno(err)
 	}
 	return fusefs.OK
+}
+
+func (f *PodFuseNode) Mknod(ctx context.Context, name string, mode uint32, dev uint32, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
+	return nil, syscall.EPERM
+}
+
+func (f *PodFuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
+	return nil, syscall.EPERM
+}
+
+func (f *PodFuseNode) Link(ctx context.Context, target fusefs.InodeEmbedder, name string, out *fuse.EntryOut) (node *fusefs.Inode, errno syscall.Errno) {
+	return nil, syscall.EPERM
+}
+func (f *PodFuseNode) Unlink(ctx context.Context, name string) syscall.Errno {
+	return syscall.EPERM
+}
+func (f *PodFuseNode) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (node *fusefs.Inode, errno syscall.Errno) {
+	return nil, syscall.EPERM
 }
