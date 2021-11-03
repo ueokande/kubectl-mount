@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"io"
 	"io/fs"
 	"syscall"
 
@@ -19,6 +20,9 @@ type PodFuseNode struct {
 var _ = (fusefs.NodeReaddirer)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeLookuper)((*PodFuseNode)(nil))
 var _ = (fusefs.NodeGetattrer)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeOpener)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeReader)((*PodFuseNode)(nil))
+var _ = (fusefs.NodeReleaser)((*PodFuseNode)(nil))
 
 func (n *PodFuseNode) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errno) {
 	es, err := fs.ReadDir(n.fsys, ".")
@@ -68,9 +72,6 @@ func (n *PodFuseNode) Lookup(ctx context.Context, name string, out *fuse.EntryOu
 }
 
 func (n *PodFuseNode) Getattr(ctx context.Context, f fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	if f != nil {
-		return f.(fusefs.FileGetattrer).Getattr(ctx, out)
-	}
 	inf, err := fs.Stat(n.fsys, n.file)
 	if err != nil {
 		return fusefs.ToErrno(err)
@@ -91,6 +92,41 @@ func (n *PodFuseNode) Getattr(ctx context.Context, f fusefs.FileHandle, out *fus
 		out.Uid = uint32(stat.Uid)
 		out.Gid = uint32(stat.Gid)
 		out.Rdev = uint32(stat.Rdev)
+	}
+	return fusefs.OK
+}
+
+func (f *PodFuseNode) Open(ctx context.Context, flags uint32) (fh fusefs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	src, err := f.fsys.Open(f.file)
+	if err != nil {
+		return nil, 0, fusefs.ToErrno(err)
+	}
+	return src, fuse.FOPEN_NONSEEKABLE, fusefs.OK
+}
+
+func (f *PodFuseNode) Read(ctx context.Context, h fusefs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	r := h.(io.ReadCloser)
+
+	_, err := io.CopyN(io.Discard, r, off)
+	if err != nil && err != io.EOF {
+		if err == io.EOF {
+			r.Close()
+		}
+		return nil, fusefs.ToErrno(err)
+	}
+
+	_, err = r.Read(dest)
+	if err != nil && err != io.EOF {
+		return nil, fusefs.ToErrno(err)
+	}
+	return fuse.ReadResultData(dest), fusefs.OK
+}
+
+func (f *PodFuseNode) Release(ctx context.Context, h fusefs.FileHandle) syscall.Errno {
+	r := h.(io.ReadCloser)
+	err := r.Close()
+	if err != nil {
+		return fusefs.ToErrno(err)
 	}
 	return fusefs.OK
 }

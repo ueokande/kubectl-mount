@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -24,6 +25,7 @@ func (e *RemoteCommandErr) Error() string {
 
 type Executor interface {
 	Run(ctx context.Context, command []string) ([]byte, error)
+	RunRead(ctx context.Context, command []string) (io.ReadCloser, error)
 }
 
 type PodExecutor struct {
@@ -72,4 +74,72 @@ func (e *PodExecutor) Run(ctx context.Context, command []string) ([]byte, error)
 		return nil, err
 	}
 	return stdout.Bytes(), nil
+}
+
+type bufferCloser struct {
+	bytes.Buffer
+	closed bool
+	ch     chan struct{}
+}
+
+func (b *bufferCloser) Done() <-chan struct{} {
+	b.ch = make(chan struct{})
+	return b.ch
+}
+
+func (b *bufferCloser) Close() error {
+	if b.closed {
+		return nil
+	}
+	b.closed = true
+	b.ch <- struct{}{}
+	return nil
+}
+
+func (e *PodExecutor) RunRead(ctx context.Context, command []string) (io.ReadCloser, error) {
+	req := e.RestClient.Post().
+		Resource("pods").
+		Name(e.PodName).
+		Namespace(e.Namespace).
+		SubResource("exec")
+	req.VersionedParams(&corev1.PodExecOptions{
+		Container: e.ContainerName,
+		Command:   command,
+		Stdin:     true,
+		Stdout:    true,
+		Stderr:    true,
+		TTY:       false,
+	}, scheme.ParameterCodec)
+
+	executor, err := remotecommand.NewSPDYExecutor(e.Config, "POST", req.URL())
+	if err != nil {
+		return nil, err
+	}
+	var stdout bufferCloser
+	var stderr bytes.Buffer
+	var stdin bytes.Buffer
+	err = executor.Stream(remotecommand.StreamOptions{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Stdin:  &stdin,
+		Tty:    false,
+	})
+	var execerr exec.CodeExitError
+	if errors.As(err, &execerr) {
+		return nil, &RemoteCommandErr{
+			Stderr: stderr.Bytes(),
+			Err:    err,
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		<-stdout.Done()
+		stdin.Write([]byte{0x03}) // Ctrl-C
+		io.Copy(io.Discard, &stdout)
+	}()
+
+	return &stdout, nil
 }

@@ -171,6 +171,7 @@ func (o *MountOptions) RunMount(ctx context.Context) error {
 	root := &PodFuseNode{
 		fsys: fsys,
 	}
+
 	var opt fusefs.Options
 	opt.Debug = o.Debug
 	srv, err := fusefs.Mount(o.MountPoint, root, &opt)

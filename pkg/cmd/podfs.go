@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"path"
 	"strconv"
@@ -41,10 +42,20 @@ type PodFS struct {
 }
 
 func (f *PodFS) Open(name string) (fs.File, error) {
-	return &PodFile{
-		name: name,
-		fs:   f,
-	}, nil
+	content, err := f.Executor.RunRead(context.TODO(), []string{
+		"cat",
+		path.Join(f.Pwd, name),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	file := PodFile{
+		name:    name,
+		fs:      f,
+		content: content,
+	}
+	return &file, nil
 }
 
 func (f *PodFS) ReadDir(name string) ([]fs.DirEntry, error) {
@@ -202,20 +213,21 @@ func (f *PodFS) Sub(dir string) (fs.FS, error) {
 }
 
 type PodFile struct {
-	name string
-	fs   fs.StatFS
+	name    string
+	fs      fs.StatFS
+	content io.ReadCloser
 }
 
 func (f *PodFile) Stat() (fs.FileInfo, error) {
 	return f.fs.Stat(f.name)
 }
 
-func (f *PodFile) Read([]byte) (int, error) {
-	panic("TODO")
+func (f *PodFile) Read(b []byte) (int, error) {
+	return f.content.Read(b)
 }
 
 func (f *PodFile) Close() error {
-	panic("TODO")
+	return f.content.Close()
 }
 
 type PodFileInfo struct {
