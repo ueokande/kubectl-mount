@@ -51,6 +51,9 @@ func (n *PodFuseNode) Lookup(ctx context.Context, name string, out *fuse.EntryOu
 
 	var attr fusefs.StableAttr
 	if stat, ok := inf.Sys().(*LinuxStat_t); ok {
+		if stat.Ino == 1 {
+			return nil, syscall.EPERM
+		}
 		attr.Ino = stat.Ino
 		attr.Mode = stat.Mode
 	}
