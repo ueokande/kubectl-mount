@@ -40,21 +40,8 @@ The `kubectl mount` command works with the FUSE (Filesystem in Userspace) to mou
 
 The `kubectl mount` provides a filesystem to show files in the Kubernetes pods.  It retrieve files or directories or read files in the pod via the Kubernetes `exec` API.  When you get the list in the directory, the `ls` command runs on the pod and returns files on the directory via FUSE.  Getting file information (creation time, modification time, owner, group) works with the result of the `stat` command.
 
-```
-                                                             +--------------+
-                                                       cat   |  Kubernetes  |
-                                                       stat  |+------------+|
-        .--------------------. .--------------------.  ls    ||   NGINX    ||
-        | ls /tmp/nginx-logs | |   kubectl-mount   <-----------> /var/log  ||
-        '--------------------' '----------A---------'        ||            ||
-        .---------|-----------------------|---------.        |+------------+|
-        |         |      system call      |         |        +--------------+
-User    '---------|-----------------------|---------'
-==================|=======================|==================
-Kernel  .---------|-----------------------|---------.
-        |         '-------> FUSE ---------'         |
-        '-------------------------------------------'
-```
+![Architecture](architecture.svg)
+
 ## :stop_sign: Limitation
 
 ### Read-only filesystem
