@@ -57,6 +57,12 @@ Kernel  .---------|-----------------------|---------.
 ```
 ## :stop_sign: Limitation
 
+### Read-only filesystem
+
+It is required to update files safely to write to files or create a file on the mounted files system, and it is not implemented yet.  The `kubectl mount` mounts as a read-only file system to protect files on the pod.
+
+### Ristribution requirements
+
 The `kubectl mount` requires the following commands to be installed in the container:
 
 - `find` or `ls`

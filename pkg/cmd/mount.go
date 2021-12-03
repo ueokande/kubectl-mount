@@ -174,6 +174,7 @@ func (o *MountOptions) RunMount(ctx context.Context) error {
 
 	var opt fusefs.Options
 	opt.Debug = o.Debug
+	opt.MountOptions.Options = append(opt.MountOptions.Options, "ro")
 	srv, err := fusefs.Mount(o.MountPoint, root, &opt)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
